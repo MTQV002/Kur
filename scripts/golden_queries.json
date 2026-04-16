@@ -1,0 +1,66 @@
+[
+  {
+    "question": "Tổng doanh thu tháng này",
+    "sql": "SELECT SUM(amount - discount) AS total_revenue FROM fact_orders WHERE status = 'completed' AND created_at >= DATE_TRUNC('month', CURRENT_DATE)"
+  },
+  {
+    "question": "Doanh thu theo khu vực",
+    "sql": "SELECT r.name AS khu_vuc, r.vung, SUM(o.amount - o.discount) AS revenue, COUNT(o.id) AS so_don FROM fact_orders o JOIN dim_customers c ON o.customer_id = c.id JOIN dim_regions r ON c.region_id = r.id WHERE o.status = 'completed' GROUP BY r.name, r.vung ORDER BY revenue DESC"
+  },
+  {
+    "question": "Top 10 khách hàng chi tiêu nhiều nhất",
+    "sql": "SELECT c.name, c.tier, r.name AS khu_vuc, SUM(o.amount - o.discount) AS total_spent, COUNT(o.id) AS order_count FROM fact_orders o JOIN dim_customers c ON o.customer_id = c.id JOIN dim_regions r ON c.region_id = r.id WHERE o.status = 'completed' GROUP BY c.name, c.tier, r.name ORDER BY total_spent DESC LIMIT 10"
+  },
+  {
+    "question": "Doanh thu theo tháng 6 tháng gần nhất",
+    "sql": "SELECT DATE_TRUNC('month', created_at) AS month, SUM(amount - discount) AS revenue, COUNT(*) AS num_orders FROM fact_orders WHERE status = 'completed' AND created_at >= CURRENT_DATE - INTERVAL '6 months' GROUP BY 1 ORDER BY 1"
+  },
+  {
+    "question": "Sản phẩm bán chạy nhất",
+    "sql": "SELECT p.name, p.category, SUM(oi.quantity) AS total_sold, SUM(oi.line_total) AS total_revenue FROM fact_order_items oi JOIN dim_products p ON oi.product_id = p.id GROUP BY p.name, p.category ORDER BY total_sold DESC LIMIT 10"
+  },
+  {
+    "question": "Tỷ lệ đơn hàng bị hủy",
+    "sql": "SELECT status, COUNT(*) AS count, ROUND(COUNT(*)::DOUBLE / SUM(COUNT(*)) OVER () * 100, 2) AS percentage FROM fact_orders GROUP BY status ORDER BY count DESC"
+  },
+  {
+    "question": "Doanh thu theo danh mục sản phẩm",
+    "sql": "SELECT p.category, SUM(oi.line_total) AS revenue, COUNT(DISTINCT oi.order_id) AS num_orders, COUNT(DISTINCT p.id) AS num_products FROM fact_order_items oi JOIN dim_products p ON oi.product_id = p.id GROUP BY p.category ORDER BY revenue DESC"
+  },
+  {
+    "question": "Khách VIP ở Hồ Chí Minh",
+    "sql": "SELECT c.name, c.email, c.phone, c.tier FROM dim_customers c JOIN dim_regions r ON c.region_id = r.id WHERE c.tier = 'vip' AND r.name = 'Hồ Chí Minh' ORDER BY c.name LIMIT 100"
+  },
+  {
+    "question": "So sánh doanh thu tháng này với tháng trước",
+    "sql": "SELECT 'Tháng này' AS period, SUM(amount - discount) AS revenue FROM fact_orders WHERE status = 'completed' AND created_at >= DATE_TRUNC('month', CURRENT_DATE) UNION ALL SELECT 'Tháng trước', SUM(amount - discount) FROM fact_orders WHERE status = 'completed' AND created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND created_at < DATE_TRUNC('month', CURRENT_DATE)"
+  },
+  {
+    "question": "Hiệu quả marketing campaign",
+    "sql": "SELECT c.name AS campaign, c.channel, SUM(ms.spend_amount) AS total_spend, SUM(ms.clicks) AS total_clicks, SUM(ms.conversions) AS total_conversions, CASE WHEN SUM(ms.clicks) > 0 THEN ROUND(SUM(ms.conversions)::DOUBLE / SUM(ms.clicks) * 100, 2) END AS conversion_rate FROM fact_marketing_spend ms JOIN dim_campaigns c ON ms.campaign_id = c.id WHERE ms.spend_date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY c.name, c.channel ORDER BY total_conversions DESC LIMIT 10"
+  },
+  {
+    "question": "Doanh thu theo cửa hàng",
+    "sql": "SELECT s.name AS store, s.store_type, r.name AS khu_vuc, SUM(o.amount - o.discount) AS revenue, COUNT(o.id) AS orders FROM fact_orders o JOIN dim_stores s ON o.store_id = s.id JOIN dim_regions r ON s.region_id = r.id WHERE o.status = 'completed' GROUP BY s.name, s.store_type, r.name ORDER BY revenue DESC"
+  },
+  {
+    "question": "Top nhân viên bán hàng",
+    "sql": "SELECT e.name, e.department, e.position, SUM(o.amount - o.discount) AS total_sales, COUNT(o.id) AS num_orders FROM fact_orders o JOIN dim_employees e ON o.employee_id = e.id WHERE o.status = 'completed' AND e.department = 'Sales' GROUP BY e.name, e.department, e.position ORDER BY total_sales DESC LIMIT 10"
+  },
+  {
+    "question": "Số ticket hỗ trợ theo loại",
+    "sql": "SELECT ticket_type, priority, COUNT(*) AS total, SUM(CASE WHEN status = 'resolved' OR status = 'closed' THEN 1 ELSE 0 END) AS resolved FROM fact_support_tickets GROUP BY ticket_type, priority ORDER BY total DESC"
+  },
+  {
+    "question": "Lượng truy cập web theo nguồn",
+    "sql": "SELECT source, device, COUNT(*) AS sessions, SUM(converted::INT) AS conversions, ROUND(AVG(duration_seconds), 0) AS avg_duration_sec FROM fact_web_sessions WHERE session_start >= CURRENT_DATE - INTERVAL '30 days' GROUP BY source, device ORDER BY sessions DESC"
+  },
+  {
+    "question": "Tồn kho hiện tại theo cửa hàng",
+    "sql": "SELECT s.name AS store, SUM(i.quantity_on_hand) AS total_on_hand, SUM(i.quantity_sold) AS total_sold FROM fact_inventory i JOIN dim_stores s ON i.store_id = s.id WHERE i.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_inventory) GROUP BY s.name ORDER BY total_on_hand DESC"
+  },
+  {
+    "question": "Phương thức thanh toán phổ biến nhất",
+    "sql": "SELECT pm.name AS payment_method, COUNT(*) AS total_payments, SUM(p.amount) AS total_amount, ROUND(COUNT(*)::DOUBLE / SUM(COUNT(*)) OVER () * 100, 2) AS pct FROM fact_payments p JOIN dim_payment_methods pm ON p.payment_method_id = pm.id WHERE p.status = 'success' GROUP BY pm.name ORDER BY total_payments DESC"
+  }
+]

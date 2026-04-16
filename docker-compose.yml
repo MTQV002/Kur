@@ -1,0 +1,87 @@
+services:
+  # ──── UC Metadata DB (still PostgreSQL — required by UC OSS) ────
+  postgres-uc:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ucdb
+      POSTGRES_USER: uc_admin
+      POSTGRES_PASSWORD: uc_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_uc:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uc_admin -d ucdb"]
+      interval: 5s
+      retries: 5
+
+  # ──── Unity Catalog OSS ────
+  uc-server:
+    image: unitycatalog/unitycatalog:main
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_URL=jdbc:postgresql://postgres-uc:5432/ucdb
+      - DB_USER=uc_admin
+      - DB_PASSWORD=uc_secret
+    depends_on:
+      postgres-uc:
+        condition: service_healthy
+    networks:
+      default:
+        aliases:
+          - server
+
+  uc-ui:
+    image: unitycatalog/unitycatalog-ui:main
+    ports:
+      - "3000:3000"
+    environment:
+      - UC_SERVER_URL=http://uc-server:8080
+    depends_on:
+      - uc-server
+
+  # ──── Kur API (FastAPI + LangGraph + DuckDB) ────
+  kur-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - UC_SERVER_URL=http://uc-server:8080
+      - DUCKDB_PATH=/app/data/kur.db
+    depends_on:
+      - uc-server
+      - trino
+    volumes:
+      - kur_data:/app/data
+
+  # ──── Trino (single-node query engine for testing) ────
+  trino:
+    image: trinodb/trino:latest
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./trino/catalog/memory.properties:/etc/trino/catalog/memory.properties:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/v1/info >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ──── Kur Web UI (Vite React — production build) ────
+  kur-ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    ports:
+      - "8501:80"
+    depends_on:
+      - kur-api
+
+volumes:
+  pgdata_uc:
+  kur_data:

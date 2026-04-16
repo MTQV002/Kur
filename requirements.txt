@@ -1,0 +1,30 @@
+# ──── Core ────
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-openai>=0.2.0
+langchain-groq>=0.2.0
+langchain-google-genai>=2.1.0
+langchain-community>=0.3.0
+python-dotenv>=1.0.0
+
+# ──── Database ────
+duckdb>=1.2.0
+psycopg2-binary>=2.9.9
+trino>=0.330.0
+
+# ──── RAG ────
+vanna[chromadb,openai]>=0.7.0
+
+# ──── SQL Validation ────
+sqlparse>=0.5.0
+sqlglot>=25.0.0
+
+# ──── Data Generation ────
+numpy>=1.26.0
+pyarrow>=18.0.0
+
+# ──── API ────
+requests>=2.31.0
+pydantic>=2.0.0
