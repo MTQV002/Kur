@@ -2,3 +2,9 @@ data/*.db
 data/**/*.db
 *.db
 *.duckdb
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+data/chroma/

@@ -1,382 +1,280 @@
-# 🔮 Kur — Agentic Text-to-SQL (DuckDB + Unity Catalog OSS + Trino-ready)
+# Kur AI — Agentic Text-to-SQL Assistant
 
-Kur là trợ lý dữ liệu kiểu Genie-lite:
-- Hỏi tiếng Việt/English
-- Chuẩn bị SQL có kiểm soát (Allow/Skip trước khi chạy)
-- Thực thi và trả lời business-friendly
-- Có lịch sử bền (persist sau reload)
-- Có ngữ cảnh hội thoại gần nhất để hiểu follow-up
+Kur AI giúp end-user (Analyst, Data Engineer, Product/Ops) hỏi dữ liệu bằng ngôn ngữ tự nhiên và nhận lại SQL + kết quả có kiểm soát.
+
+Mục tiêu chính của hệ thống:
+- Giảm thời gian viết SQL thủ công cho câu hỏi business.
+- Tăng độ tin cậy bằng cơ chế **approval-first** (`ask` chuẩn bị SQL, `execute` mới chạy).
+- Tránh trả lời “đoán” trước khi query chạy; câu trả lời business được build từ kết quả thực tế.
 
 ---
 
-## 1) Kiến trúc hiện tại
+## 1) End-user Problem Kur đang giải quyết
+
+Trong thực tế, user business thường gặp 3 vấn đề:
+1. Không biết schema đủ sâu để tự viết SQL đúng.
+2. Cần kết quả nhanh nhưng vẫn muốn kiểm soát query trước khi chạy.
+3. Cần câu trả lời dễ hiểu, bám số liệu thật từ dữ liệu trả về.
+
+Kur giải quyết bằng luồng:
+- User hỏi tiếng Việt/English.
+- Hệ thống chuẩn bị SQL (chưa chạy ngay).
+- User duyệt query (Allow/Skip).
+- Hệ thống execute và trả answer grounded theo dữ liệu trả về.
+
+---
+
+## 2) Kiến trúc hệ thống (Current)
 
 ```mermaid
 graph TD
-    U[User UI] --> API[FastAPI /api/ask]
-    API --> I[Intent Classifier]
-  I -->|sql_query| S[Schema Retriever<br/>UC + Physical Tables]
-    I -->|clarification| C[Schema Clarification Answer]
-    I -->|sql_explain| E[Explain Last SQL]
-    I -->|meta/greeting| M[Direct Response]
+        U[User - Web UI] --> API[FastAPI /api/ask]
+        API --> ROUTER[Router LLM]
+        ROUTER -->|CHAT| CHAT[Direct chat response]
+        ROUTER -->|SQL| GEN[Generator ReAct Agent]
+        GEN --> TOOLS[get_database_schema + check_sql_syntax]
+        TOOLS --> GEN
+        GEN --> PREP[Prepared SQL + request_id]
+        PREP --> U
 
-    S --> R[RAG Examples Optional]
-    R --> G[SQL Generator]
-    G --> V[Validator]
-    V -->|PASS| P[Prepared SQL + request_id]
-    V -->|FAIL| F[Refiner + Retry]
-    F --> G
+        U --> EXEC[POST /api/execute]
+        EXEC --> DB[(DuckDB / Trino)]
+        DB --> RESULT[Rows + Columns]
+        RESULT --> GROUNDED[Grounded Answer Builder]
+        GROUNDED --> U
 
-    P --> X[POST /api/execute]
-    X --> EXE[Executor DuckDB/Trino]
-    EXE --> FM[Formatter]
-    FM --> U
-
-    API --> H[(SQLite History)]
-    H --> API
+        API -.-> PHX[Arize Phoenix / OpenTelemetry]
 ```
 
----
-
-## 2) Flow tương tác (2-phase execution)
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant UI
-    participant API
-    participant DB
-
-    User->>UI: "Tổng doanh thu tháng này"
-    UI->>API: POST /api/ask
-    API->>API: intent + schema + generate + validate
-    API-->>UI: requires_approval=true + SQL + request_id
-
-    User->>UI: Allow chạy query
-    UI->>API: POST /api/execute(request_id)
-    API->>DB: Execute SQL
-    API-->>UI: data + answer
-```
+### Thành phần chính
+- **Frontend**: Vanilla HTML/CSS/JS, side-drawer settings, single-flow chat UI.
+- **Backend**: FastAPI (`app/api.py`) với ask/execute/state/history.
+- **Agent Layer**: LangGraph (`agent/graph.py`) với Router + Generator.
+- **Execution**: DuckDB mặc định, Trino configurable.
+- **Catalog**: Apache Polaris (headless REST catalog).
+- **Observability**: OpenTelemetry + Arize Phoenix.
 
 ---
 
-## 3) Điểm mới đã fix
+## 3) Luồng API cốt lõi
 
-- Follow-up thông minh hơn:
-  - Nhận diện intent `sql_explain` cho câu kiểu: “query trên tối ưu chưa?”, “giải thích câu SQL vừa rồi”.
-  - Phân tích dựa trên **SQL gần nhất** trong lịch sử.
-- Memory ngữ cảnh:
-  - SQL generator nhận thêm `conversation_context` (các lượt gần nhất), nên bớt “mất ngữ cảnh”.
-- Clarification chính xác:
-  - Đếm bảng theo physical source-of-truth để không đếm trùng UC semantic section.
-- History bền:
-  - Lưu SQLite tại `data/history.db`, reload không mất.
-  - Chống duplicate khi hỏi liên tiếp cùng câu trong cửa sổ thời gian ngắn.
-- Root folder sạch hơn:
-  - Log `.txt` được gom vào `log/archive/`.
-  - Blueprint doc được đưa vào `docs/`.
+### `POST /api/ask`
+- Classify nhanh câu hỏi:
+    - schema-list / explain follow-up / SQL query / meta chat.
+- Nếu ra SQL: trả về `requires_approval=true` và `request_id`.
+- Thông điệp trước execute là trung tính (không đoán kết quả).
+
+### `POST /api/execute`
+- Nhận `request_id`, chạy SQL thật trên engine hiện hành.
+- Trả `data`, `columns`, `latency_ms`.
+- Tạo câu trả lời business từ dữ liệu thật (`_build_grounded_answer_from_result`).
 
 ---
 
-## 4) Cấu trúc dự án (đã dọn)
+## 4) Cấu trúc thư mục
 
 ```text
 Kur/
-├── api.py
-├── graph.py
-├── docker-compose.yml
-├── Dockerfile
-├── requirements.txt
-├── README.md
-│
-├── nodes/
-│   ├── intent.py
-│   ├── schema_retriever.py
-│   ├── rag_retriever.py
-│   ├── sql_generator.py
-│   ├── validator.py
-│   ├── executor.py
-│   ├── refiner.py
-│   └── formatter.py
-│
-├── tools/
-├── utils/
-├── skills/
-│   ├── writing-sql/SKILL.md
-│   └── diagnose-error/SKILL.md
-│
-├── scripts/
-│   ├── 02_generate_data.py
-│   ├── setup_catalog.py
-│   ├── train_rag.py
-│   └── smoke_da_questions.py
-│
+├── app/
+│   ├── api.py                    # FastAPI endpoints + flow orchestration
+│   ├── core/config.py            # Settings defaults + env mapping
+│   ├── models/api_models.py      # Request/response models
+│   └── services/                 # History/Polaris/schema adapters
+├── agent/
+│   ├── graph.py                  # Router + Generator LangGraph flow
+│   ├── tools/                    # schema + syntax tools
+│   └── utils/                    # llm factory + timeout invoke
 ├── ui/
 │   ├── index.html
 │   ├── style.css
-│   ├── app.js
-│   └── Dockerfile
-│
-├── trino/
-│   └── catalog/
-│       └── memory.properties
-│
-├── data/
-│   ├── kur.db
-│   ├── settings.json
-│   └── history.db
-│
-├── docs/
-│   └── SINGLE_NODE_BLUEPRINT_GAP.md
-└── log/
-    └── archive/
+│   ├── app.js                    # bootstrap/theme/shared state
+│   └── js/
+│       ├── api.js
+│       ├── chat.js
+│       └── settings.js
+├── scripts/
+│   ├── 02_generate_data.py       # generate DuckDB demo data
+│   └── setup_polaris.py          # create Polaris catalog
+├── docker-compose.yml
+├── Dockerfile
+└── requirements.txt
 ```
 
 ---
 
-## 5) Chạy nhanh bằng Docker
+## 5) Yêu cầu môi trường
 
-### 5.1 Chuẩn bị
+### Bắt buộc
+- Docker + Docker Compose plugin
+- Git
 
+### Tùy chọn (nếu chạy local không Docker)
+- Python 3.11
+- `pip`
+
+---
+
+## 6) Quick Start (khuyến nghị dùng Docker)
+
+### Bước 1: Clone và vào project
 ```bash
-cd /data/DE/Kur
-
-# tạo file env nếu chưa có
-cp .env.example .env
+git clone <your-repo-url>
+cd Kur
 ```
 
-### 5.2 Build + up
+### Bước 2: Tạo file `.env`
+Bạn có thể copy từ `.env.example` rồi chỉnh lại, hoặc tạo mới với block tối thiểu dưới đây:
 
 ```bash
-cd /data/DE/Kur
+cat > .env << 'EOF'
+ROUTER_PROVIDER=groq
+ROUTER_MODEL=llama-3.1-8b-instant
+ROUTER_API_KEY=
+
+GENERATOR_PROVIDER=openai
+GENERATOR_MODEL=gpt-4o
+GENERATOR_API_KEY=
+
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=snowflake-arctic-text2sql-r1:7b
+
+DB_ENGINE=duckdb
+DUCKDB_PATH=/app/data/kur.db
+
+POLARIS_URL=http://polaris:8181
+POLARIS_CATALOG=kur_polaris_catalog
+POLARIS_CREDENTIALS=polaris:polaris_secret
+
+PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006/v1/traces
+EOF
+```
+
+> Nếu chưa có API key ngay, hệ thống vẫn boot được nhưng các câu hỏi cần LLM sẽ lỗi cho tới khi bạn cấu hình key trong Settings UI hoặc `.env`.
+
+### Bước 3: Build và chạy services
+```bash
 docker compose up -d --build
 ```
 
-### 5.3 Kiểm tra dịch vụ đã lên
-
+### Bước 4: (Khuyến nghị) tạo demo data DuckDB
 ```bash
-cd /data/DE/Kur
-docker compose ps
-curl -s http://localhost:8000/api/health
-```
-
-### 5.4 URLs
-
-- Kur UI: http://localhost:8501
-- Kur API: http://localhost:8000
-- UC Server: http://localhost:8080
-- UC UI: http://localhost:3000
-- Trino Coordinator: http://localhost:8082
-
-### 5.5 Seed dữ liệu (chỉ chạy khi DB rỗng hoặc cần reset)
-
-```bash
-cd /data/DE/Kur
-# Dừng API để tránh lock file DuckDB
-docker compose stop kur-api
-
-# Recreate dữ liệu sample trong volume dùng chung
 docker compose run --rm kur-api python /app/scripts/02_generate_data.py
-
-# Chạy lại API
-docker compose up -d kur-api
-
-# kiểm tra lại
-curl -s http://localhost:8000/api/health
+docker compose restart kur-api
 ```
+
+### Bước 5: Khởi tạo Polaris catalog
+```bash
+python3 scripts/setup_polaris.py
+```
+
+### Bước 6: Mở các URL
+- Kur UI: http://localhost:8501
+- Kur API docs: http://localhost:8000/docs
+- Phoenix traces: http://localhost:6006
+- Polaris endpoint: http://localhost:8181
 
 ---
 
-## 6) Chạy local (không Docker)
+## 7) Smoke test nhanh
+
+### Health
+```bash
+curl -s http://localhost:8000/api/health
+```
+
+### Ask (prepare SQL)
+```bash
+curl -s -X POST http://localhost:8000/api/ask \
+    -H 'Content-Type: application/json' \
+    -d '{"question":"Có bao nhiêu dòng dữ liệu trong bảng khách hàng?"}'
+```
+
+Kỳ vọng:
+- Có `requires_approval: true`
+- Có `request_id`
+- Không trả lời phán đoán kết quả trước execute
+
+### Execute
+```bash
+curl -s -X POST http://localhost:8000/api/execute \
+    -H 'Content-Type: application/json' \
+    -d '{"request_id":"<REQUEST_ID_FROM_ASK>"}'
+```
+
+Kỳ vọng:
+- Trả `data` + `columns`
+- `answer` bám dữ liệu query trả về
+
+---
+
+## 8) Chạy local (không Docker)
 
 ```bash
-cd /data/DE/Kur
-conda create -n kur python=3.10 -y
-conda activate kur
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 
-# tạo env nếu chưa có
-cp .env.example .env
-
-# tạo dữ liệu
+# optional: tạo data demo
 python scripts/02_generate_data.py
 
 # chạy API
-uvicorn api:app --reload --port 8000
+uvicorn app.api:app --reload --port 8000
 
-# UI static (terminal mới)
-cd ui
-python -m http.server 5173
+# chạy UI (khuyến nghị vẫn dùng container UI để có proxy /api)
+docker compose up -d kur-ui
 ```
 
-UI local: http://localhost:5173
-
-Health API local: http://localhost:8000/api/health
+> Nếu bạn muốn chạy UI local bằng static server (`python -m http.server`), cần tự cấu hình proxy `/api` hoặc sửa `window.KurApp.API_URL` trong `ui/app.js` thành `http://localhost:8000`.
 
 ---
 
-## 7) API hiện tại
+## 9) Lưu ý vận hành
 
-| Method | Endpoint | Mục đích |
-|---|---|---|
-| GET | `/api/health` | Health + engine + số bảng |
-| POST | `/api/ask` | Chuẩn bị SQL hoặc trả lời direct intent |
-| POST | `/api/execute` | Execute SQL đã chuẩn bị (qua `request_id`) |
-| GET | `/api/history` | Lấy lịch sử chat persist |
-| DELETE | `/api/history` | Xóa lịch sử chat |
-| GET | `/api/settings` | Đọc settings hiện tại |
-| POST | `/api/settings` | Cập nhật settings |
-| POST | `/api/settings/reset` | Reset settings |
-| GET | `/api/schema` | Introspect schema |
-| GET | `/api/suggestions` | Gợi ý câu hỏi |
+- Polaris OSS là headless catalog, không có UI quản trị mặc định.
+- UI static có no-cache headers cho HTML/CSS/JS để tránh stale assets.
+- `PENDING_QUERIES` đang in-memory (TTL 1800s), nên restart API sẽ mất pending request.
+- History chat được lưu ở SQLite (`data/history.db`).
 
-### Ví dụ ask + execute
+---
 
+## 10) Troubleshooting
+
+### UI vẫn hiện trạng thái cũ sau khi deploy
 ```bash
-# 1) ask
-curl -X POST http://localhost:8000/api/ask \
-  -H "Content-Type: application/json" \
-  -d '{"question":"Tổng doanh thu tháng này"}'
-
-# 2) execute (dùng request_id từ bước 1)
-curl -X POST http://localhost:8000/api/execute \
-  -H "Content-Type: application/json" \
-  -d '{"request_id":"<request-id>"}'
+docker compose build --no-cache kur-ui
+docker compose up -d kur-ui
 ```
+Hard refresh trình duyệt (`Ctrl+Shift+R`).
 
----
+### `ask` báo lỗi quota/key
+- Kiểm tra `ROUTER_API_KEY` / `GENERATOR_API_KEY`.
+- Hoặc mở Settings trong UI để cấu hình lại provider/model/key.
 
-## 8) Cách Kur xử lý câu follow-up
+### `execute` lỗi SQL
+- Xem SQL trong response ask.
+- Kiểm tra schema data đã generate chưa (`02_generate_data.py`).
 
-Ví dụ user hỏi:
-- “Giải thích câu query trên như vậy đã tối ưu chưa?”
-
-Kur sẽ:
-1. Classify thành `sql_explain`
-2. Lấy SQL gần nhất từ lịch sử
-3. Phân tích và trả lời theo dạng:
-   - Query đang làm gì
-   - Điểm tốt
-   - Điểm cần tối ưu
-   - SQL đề xuất (nếu cần)
-
-Điều này giúp tránh bị lệch sang trả lời schema chung chung.
-
----
-
-## 9) Engine support
-
-### DuckDB (default)
-- Nhanh, đơn giản cho single-node
-- Phù hợp POC + demo analytics
-
-### Trino (đã tích hợp)
-- Có service Trino trong Docker
-- API hỗ trợ execute/health/schema cho mode `db_engine=trino`
-- Dùng để thử multi-engine path
-
----
-
-## 10) Test nhanh chất lượng câu hỏi DA
-
-Script smoke test:
-
+### Không có dữ liệu
+- Chạy lại script generate data:
 ```bash
-cd /data/DE/Kur
-python3 scripts/smoke_da_questions.py
+docker compose run --rm kur-api python /app/scripts/02_generate_data.py
+docker compose restart kur-api
 ```
-
-Bộ câu hỏi bao gồm:
-- Clarification schema
-- Tổng doanh thu tháng này
-- Top khách hàng chi tiêu
-- Doanh thu theo khu vực
-- Sản phẩm bán chạy
-- Tỷ lệ đơn hàng hủy
-- So sánh Q1/Q2
-- Trung bình giá trị đơn hàng
 
 ---
 
-## 11) Mermaid tổng quan thành phần
+## 11) Tech Stack
 
-```mermaid
-graph LR
-    subgraph Interface
-        UI[Web UI]
-    end
-
-    subgraph Backend
-        API[FastAPI]
-        LG[LangGraph-style pipeline]
-        HIST[(SQLite history)]
-    end
-
-    subgraph Context
-        UC[Unity Catalog OSS]
-        RAG[Vanna/Chroma optional]
-        SK[Skills markdown]
-    end
-
-    subgraph Data
-        DDB[(DuckDB)]
-        TRI[Trino]
-    end
-
-    UI --> API
-    API --> LG
-    API --> HIST
-    LG --> UC
-    LG --> RAG
-    LG --> SK
-    LG --> DDB
-    LG --> TRI
-```
+- Backend: FastAPI, Pydantic, DuckDB/Trino
+- Agent: LangChain, LangGraph
+- Frontend: Vanilla JS, Inter, Lucide, Nginx static serving
+- Catalog: Apache Polaris
+- Observability: Arize Phoenix + OpenTelemetry
 
 ---
 
 ## 12) Tài liệu liên quan
 
-- Gap review và roadmap: `docs/SINGLE_NODE_BLUEPRINT_GAP.md`
-- Skill SQL prompt: `skills/writing-sql/SKILL.md`
-- Script tạo dữ liệu: `scripts/02_generate_data.py`
-
----
-
-## 13) Lưu ý production
-
-- Dù đã tốt hơn về context, đây vẫn là POC-level agentic app.
-- Muốn “thông minh ổn định kiểu production”, cần thêm:
-  - Semantic layer chính thức (metric definitions)
-  - Golden queries + evaluation pipeline
-  - Observability/metrics + tracing chuẩn
-  - RBAC và security policy sâu hơn
-
----
-
-## 14) So sánh nhanh: Kur hiện tại vs Genie
-
-> Phạm vi so sánh: bản Kur single-node hiện tại, đối chiếu theo reverse-engineering tài liệu Genie.
-
-| Hạng mục | Kur hiện tại | Genie (theo reverse engineering) | GAP chính |
-|---|---|---|---|
-| Core pattern | Agentic Text-to-SQL pipeline | Tool-calling agent + skills | Tương đồng kiến trúc lõi |
-| Tooling | Tool nội bộ cho schema/sql/exec/history | ~14 tools page-specific | Kur ít tool platform-level hơn |
-| Routing | Intent-based trong 1 app | Chủ yếu page-based agent routing | Kur chưa có multi-page handoff như `openAsset` |
-| Metadata | UC OSS + physical introspection | UC tools sâu hơn (`readTable`, `tableSearch`, insights/lineage) | Kur thiếu lineage/insights mức platform |
-| Execution safety | 2-phase Ask/Execute (Allow/Skip) | Execute tool trực tiếp trong context page | Kur đã có control tốt cho POC |
-| Memory | SQLite chat history + recent context | Context theo page/asset + platform state | Kur chưa có context sâu theo asset/page |
-| Skills | Markdown skills cục bộ | Skills markdown load theo nhu cầu | Tương đồng, Kur cần mở rộng skill coverage |
-| Observability | Mức cơ bản | Tích hợp sâu trong platform | Kur thiếu metrics/tracing chuẩn production |
-| UX | Web app đơn giản, no flow trace | UX tích hợp workspace-native | Kur thiếu polished workflow liên trang |
-
-### Kết luận ngắn
-- Với scope single-node, Kur đã đạt được phần lõi quan trọng: hiểu câu hỏi, chuẩn bị SQL có approval, execute đa engine, giữ context cơ bản.
-- GAP lớn nhất so với Genie nằm ở **deep platform integration** (lineage/insights/page context), **observability**, và **production governance**.
-
----
-
-Nếu bạn muốn, bước tiếp theo mình có thể làm luôn:
-1) thêm semantic model YAML cho domain Sales,
-2) map synonym business terms,
-3) bật chế độ “trusted query” cho các câu hỏi hay gặp.
+- UI As-built blueprint: `docs/frontend_blueprint.md`
+- System current-state blueprint: `docs/latest_blueprint.md`
+- Gap analysis: `docs/SINGLE_NODE_BLUEPRINT_GAP.md`

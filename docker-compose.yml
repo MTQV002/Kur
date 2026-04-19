@@ -1,45 +1,22 @@
 services:
-  # ──── UC Metadata DB (still PostgreSQL — required by UC OSS) ────
-  postgres-uc:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: ucdb
-      POSTGRES_USER: uc_admin
-      POSTGRES_PASSWORD: uc_secret
+  # ──── Apache Polaris (Iceberg REST Catalog) ────
+  polaris:
+    image: apache/polaris:latest
     ports:
-      - "5432:5432"
-    volumes:
-      - pgdata_uc:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U uc_admin -d ucdb"]
-      interval: 5s
-      retries: 5
+      - "8181:8181"
+    environment:
+      - POLARIS_BOOTSTRAP_CREDENTIALS=POLARIS,polaris,polaris_secret
+      - POLARIS_FEATURES_SUPPORTED_CATALOG_STORAGE_TYPES=FILE,S3,GCS,AZURE
 
-  # ──── Unity Catalog OSS ────
-  uc-server:
-    image: unitycatalog/unitycatalog:main
+  # ──── Observability (Arize Phoenix) ────
+  phoenix:
+    image: arizephoenix/phoenix:latest
     ports:
-      - "8080:8080"
+      - "6006:6006"
+      - "4317:4317" # OTLP GRPC
     environment:
-      - DB_URL=jdbc:postgresql://postgres-uc:5432/ucdb
-      - DB_USER=uc_admin
-      - DB_PASSWORD=uc_secret
-    depends_on:
-      postgres-uc:
-        condition: service_healthy
-    networks:
-      default:
-        aliases:
-          - server
-
-  uc-ui:
-    image: unitycatalog/unitycatalog-ui:main
-    ports:
-      - "3000:3000"
-    environment:
-      - UC_SERVER_URL=http://uc-server:8080
-    depends_on:
-      - uc-server
+      - PHOENIX_PORT=6006
+      - PHOENIX_GRPC_PORT=4317
 
   # ──── Kur API (FastAPI + LangGraph + DuckDB) ────
   kur-api:
@@ -51,10 +28,8 @@ services:
     env_file:
       - .env
     environment:
-      - UC_SERVER_URL=http://uc-server:8080
       - DUCKDB_PATH=/app/data/kur.db
     depends_on:
-      - uc-server
       - trino
     volumes:
       - kur_data:/app/data
@@ -83,5 +58,4 @@ services:
       - kur-api
 
 volumes:
-  pgdata_uc:
   kur_data:

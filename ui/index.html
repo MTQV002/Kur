@@ -6,263 +6,54 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kur — AI SQL Assistant</title>
     <link rel="icon" type="image/svg+xml"
-        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>🔮</text></svg>">
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28' font-family='sans-serif' font-weight='bold' fill='%231e40af'>K</text></svg>">
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="style.css?v=4.2">
 </head>
 
 <body>
     <div class="app">
-        <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <div class="logo">
-                    <span class="logo-icon">🔮</span>
-                    <span class="logo-text">Kur</span>
-                </div>
-                <button class="btn-icon" id="newChatBtn" title="New Chat">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 5v14M5 12h14" />
-                    </svg>
-                </button>
-            </div>
-
-            <div class="sidebar-section">
-                <div class="sidebar-label">Gợi ý</div>
-                <div id="suggestions" class="suggestions"></div>
-            </div>
-
-            <div class="sidebar-section">
-                <div class="sidebar-label">Lịch sử</div>
-                <div id="history" class="history-list"></div>
-            </div>
-
-            <div class="sidebar-footer">
-                <div class="sidebar-label">Database</div>
-                <div id="dbInfo" class="db-info">Loading...</div>
-                <button class="settings-btn" id="settingsBtn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path
-                            d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                        <circle cx="12" cy="12" r="3" />
-                    </svg>
-                    <span>Settings</span>
-                </button>
-            </div>
-        </aside>
-
-        <!-- Settings Panel (overlay) -->
-        <div class="settings-overlay" id="settingsOverlay">
-            <div class="settings-panel">
-                <div class="settings-header">
-                    <h2>⚙️ Settings</h2>
-                    <button class="btn-icon" id="closeSettingsBtn">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <path d="M18 6L6 18M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
-
-                <div class="settings-layout">
-                    <!-- Settings Sidebar Tabs -->
-                    <div class="settings-tabs" id="settingsTabs">
-                        <button class="settings-tab active" data-target="tab-llm">LLM Provider</button>
-                        <button class="settings-tab" data-target="tab-db">Database</button>
-                        <button class="settings-tab" data-target="tab-uc">Unity Catalog</button>
-                        <button class="settings-tab" data-target="tab-agent">Agent Behavior</button>
-                    </div>
-
-                    <!-- Settings Body -->
-                    <div class="settings-body">
-                        <!-- Tab: LLM Provider -->
-                        <div class="settings-tab-pane active" id="tab-llm">
-                            <div class="settings-group-desc">Configure the AI models used by the agent to understand
-                                intents and generate SQL.</div>
-                            <div class="field">
-                                <label>Provider</label>
-                                <select id="sLlmProvider">
-                                    <option value="openai">OpenAI (GPT-4o)</option>
-                                    <option value="groq">Groq (Llama / Mixtral)</option>
-                                    <option value="gemini">Google Gemini</option>
-                                    <option value="ollama">Ollama (Self-hosted)</option>
-                                </select>
-                            </div>
-                            <div class="field" id="sModelField">
-                                <label>Model</label>
-                                <select id="sModel">
-                                    <option value="gpt-4o">gpt-4o</option>
-                                    <option value="gpt-4o-mini">gpt-4o-mini</option>
-                                    <option value="gpt-4.1">gpt-4.1</option>
-                                </select>
-                            </div>
-                            <div class="field" id="sApiKeyField">
-                                <label>API Key</label>
-                                <div class="key-input">
-                                    <input type="password" id="sApiKey" placeholder="sk-..." autocomplete="off">
-                                    <button class="btn-peek" id="peekKeyBtn" title="Hiện/Ẩn">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2">
-                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                                            <circle cx="12" cy="12" r="3" />
-                                        </svg>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="field hidden" id="sOllamaUrlField">
-                                <label>Ollama URL</label>
-                                <input type="text" id="sOllamaUrl" placeholder="http://localhost:11434">
-                            </div>
-                            <div class="field hidden" id="sOllamaModelField">
-                                <label>Ollama Model</label>
-                                <input type="text" id="sOllamaModel" placeholder="snowflake-arctic-text2sql-r1:7b">
-                            </div>
-                        </div>
-
-                        <!-- Tab: Database Engine -->
-                        <div class="settings-tab-pane" id="tab-db">
-                            <div class="settings-group-desc">Connection string to the analytical execution engine
-                                executing the final SQL queries.</div>
-                            <div class="field">
-                                <label>Engine</label>
-                                <select id="sDbEngine">
-                                    <option value="duckdb">DuckDB (local file)</option>
-                                    <option value="postgres">PostgreSQL</option>
-                                    <option value="trino">Trino / Starburst</option>
-                                    <option value="clickhouse">ClickHouse</option>
-                                </select>
-                            </div>
-                            <div class="field" id="sDuckdbPathField">
-                                <label>DuckDB Path</label>
-                                <input type="text" id="sDuckdbPath" placeholder="data/kur.db">
-                            </div>
-                            <div class="field-row hidden" id="sDbHostPortField">
-                                <div class="field flex-2">
-                                    <label>Host</label>
-                                    <input type="text" id="sDbHost" placeholder="localhost">
-                                </div>
-                                <div class="field flex-1">
-                                    <label>Port</label>
-                                    <input type="number" id="sDbPort" placeholder="5432">
-                                </div>
-                            </div>
-                            <div class="field hidden" id="sDbNameField">
-                                <label>Database Name</label>
-                                <input type="text" id="sDbName" placeholder="business_db">
-                            </div>
-                            <div class="field hidden" id="sDbUserField">
-                                <label>Username</label>
-                                <input type="text" id="sDbUser" placeholder="analyst">
-                            </div>
-                            <div class="field hidden" id="sDbPasswordField">
-                                <label>Password</label>
-                                <input type="password" id="sDbPassword" placeholder="••••••">
-                            </div>
-                        </div>
-
-                        <!-- Tab: Unity Catalog -->
-                        <div class="settings-tab-pane" id="tab-uc">
-                            <div class="settings-group-desc">Connects to a Databricks Unity Catalog OSS instance for
-                                Schema retrieval and semantic contexts.</div>
-                            <div class="field">
-                                <label>UC Server URL</label>
-                                <input type="text" id="sUcUrl" placeholder="http://uc-server:8080">
-                            </div>
-                            <div class="field-row">
-                                <div class="field">
-                                    <label>Catalog Name</label>
-                                    <input type="text" id="sUcCatalog" placeholder="kur_catalog">
-                                </div>
-                                <div class="field">
-                                    <label>Schema Name</label>
-                                    <input type="text" id="sUcSchema" placeholder="public">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Tab: Agent Behavior -->
-                        <div class="settings-tab-pane" id="tab-agent">
-                            <div class="settings-group-desc">Configure the Text-to-SQL logic, strict guidelines, and
-                                boundaries.</div>
-                            <div class="field">
-                                <label>Max Retries on Error</label>
-                                <input type="number" id="sMaxRetries" value="3" min="0" max="10">
-                            </div>
-                            <div class="field">
-                                <label>Query Timeout (seconds)</label>
-                                <input type="number" id="sQueryTimeout" value="30" min="5" max="300">
-                            </div>
-                            <div class="field">
-                                <label>Max Result Rows (LIMIT)</label>
-                                <input type="number" id="sMaxRows" value="1000" min="10" max="100000">
-                            </div>
-                            <div class="field">
-                                <label>Response Language</label>
-                                <select id="sLanguage">
-                                    <option value="auto">Auto-detect</option>
-                                    <option value="vi">Tiếng Việt</option>
-                                    <option value="en">English</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="settings-footer">
-                    <span class="settings-status" id="settingsStatus"></span>
-                    <div class="settings-actions">
-                        <button class="btn-secondary" id="resetSettingsBtn">Reset</button>
-                        <button class="btn-primary" id="saveSettingsBtn"> Lưu</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Main -->
         <main class="main">
-            <!-- Header -->
             <header class="header">
-                <button class="btn-icon sidebar-toggle" id="sidebarToggle">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 12h18M3 6h18M3 18h18" />
-                    </svg>
-                </button>
-                <div class="header-title">
-                    <h1>Kur</h1>
-                    <span class="header-badge" id="engineBadge">DuckDB</span>
-                    <span class="header-badge provider-badge" id="providerBadge">OpenAI</span>
+                <div class="logo">
+                    <span class="logo-text">Kur AI</span>
                 </div>
+                <div class="header-status" id="dbInfo">● Connected: DuckDB</div>
                 <div class="header-actions">
+                    <button class="btn-icon" id="newChatBtn" title="New Chat">
+                        <i data-lucide="plus" class="icon-18"></i>
+                    </button>
+                    <button class="btn-icon" id="themeToggleBtn" title="Switch theme" aria-label="Switch theme">
+                        <i data-lucide="moon" class="icon-18"></i>
+                    </button>
                     <label class="toggle-label">
                         <input type="checkbox" id="showSqlToggle" checked>
                         <span>SQL</span>
                     </label>
+                    <a href="http://localhost:6006" target="_blank" rel="noopener" class="trace-link">Traces</a>
+                    <button class="btn-icon" id="settingsBtn" title="Settings">
+                        <i data-lucide="settings-2" class="icon-18"></i>
+                    </button>
                 </div>
             </header>
 
-            <!-- Chat Area -->
-            <div class="chat-container" id="chatContainer">
+            <section class="chat-container" id="chatContainer">
                 <div class="welcome" id="welcome">
-                    <div class="welcome-icon">🔮</div>
-                    <h2>Xin chào, tôi là Kur</h2>
-                    <p>Hỏi bất kỳ điều gì về dữ liệu bằng tiếng Việt hoặc tiếng Anh.</p>
+                    <h2>How can I help you explore your data today?</h2>
+                    <p>Kur AI provides Agentic Text-to-SQL logic on Apache Polaris.</p>
                     <div class="welcome-cards" id="welcomeCards"></div>
                 </div>
                 <div id="messages" class="messages"></div>
-            </div>
+            </section>
 
-            <!-- Input -->
             <div class="input-area">
                 <div class="input-wrapper">
                     <textarea id="questionInput" placeholder="Hỏi về dữ liệu..." rows="1" autofocus></textarea>
-                    <button class="send-btn" id="sendBtn" disabled>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2.5">
-                            <path d="M22 2L11 13" />
-                            <path d="M22 2l-7 20-4-9-9-4 20-7z" />
-                        </svg>
+                    <button class="send-btn" id="sendBtn" title="Send message" disabled>
+                        <i data-lucide="send-horizontal" class="icon-18"></i>
                     </button>
                 </div>
                 <div class="input-footer">Kur có thể mắc lỗi. Hãy kiểm tra kết quả trước khi sử dụng.</div>
@@ -270,7 +61,189 @@
         </main>
     </div>
 
-    <script src="app.js"></script>
+    <div class="settings-overlay" id="settingsOverlay">
+        <aside class="settings-panel">
+            <div class="settings-header">
+                <h2><i data-lucide="sliders-horizontal" class="icon-inline"></i>Settings</h2>
+                <button class="btn-icon" id="closeSettingsBtn" title="Close">
+                    <i data-lucide="x" class="icon-18"></i>
+                </button>
+            </div>
+
+            <div class="settings-layout">
+                <div class="settings-tabs" id="settingsTabs">
+                    <button class="settings-tab active" data-target="tab-llm">Model Routing</button>
+                    <button class="settings-tab" data-target="tab-db">Analytics Engine</button>
+                    <button class="settings-tab" data-target="tab-polaris">Iceberg Catalog</button>
+                    <button class="settings-tab" data-target="tab-agent">Agent Behavior</button>
+                </div>
+
+                <div class="settings-body">
+                    <div class="settings-tab-pane active" id="tab-llm">
+                        <div class="settings-group-desc">Configure router and generator models independently for cost/performance control.</div>
+                        <h3 class="section-caption">Router Agent (Intent & Schema)</h3>
+                        <div class="field-row">
+                            <div class="field flex-1">
+                                <label>Provider</label>
+                                <select id="sRouterLlmProvider" title="Router provider">
+                                    <option value="groq">Groq (Llama / Mixtral)</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="ollama">Ollama (Self-hosted)</option>
+                                </select>
+                            </div>
+                            <div class="field flex-1" id="sRouterModelField">
+                                <label>Model</label>
+                                <input type="text" id="sRouterModel" placeholder="Nhập model hoặc chọn gợi ý" autocomplete="off">
+                                <div class="model-pills" id="sRouterModelPills"></div>
+                            </div>
+                        </div>
+                        <div class="field" id="sRouterApiKeyField">
+                            <label>Router API Key</label>
+                            <div class="key-input">
+                                <input type="password" id="sRouterApiKey" placeholder="sk-..." autocomplete="off">
+                                <button class="btn-peek" onclick="const input = document.getElementById('sRouterApiKey'); input.type = input.type === 'password' ? 'text' : 'password';" title="Hiện/Ẩn">
+                                    <i data-lucide="eye"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="split-line"></div>
+
+                        <h3 class="section-caption">SQL Generator (Heavy SQL Generation)</h3>
+                        <div class="field-row">
+                            <div class="field flex-1">
+                                <label>Provider</label>
+                                <select id="sGeneratorLlmProvider" title="Generator provider">
+                                    <option value="openai">OpenAI</option>
+                                    <option value="groq">Groq</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="ollama">Ollama</option>
+                                </select>
+                            </div>
+                            <div class="field flex-1" id="sGeneratorModelField">
+                                <label>Model</label>
+                                <input type="text" id="sGeneratorModel" placeholder="Nhập model hoặc chọn gợi ý" autocomplete="off">
+                                <div class="model-pills" id="sGeneratorModelPills"></div>
+                            </div>
+                        </div>
+                        <div class="field" id="sGeneratorApiKeyField">
+                            <label>Generator API Key</label>
+                            <div class="key-input">
+                                <input type="password" id="sGeneratorApiKey" placeholder="sk-..." autocomplete="off">
+                                <button class="btn-peek" onclick="const input = document.getElementById('sGeneratorApiKey'); input.type = input.type === 'password' ? 'text' : 'password';" title="Hiện/Ẩn">
+                                    <i data-lucide="eye"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="field hidden" id="sOllamaUrlField">
+                            <label>Ollama URL</label>
+                            <input type="text" id="sOllamaUrl" placeholder="http://localhost:11434">
+                        </div>
+                    </div>
+
+                    <div class="settings-tab-pane" id="tab-db">
+                        <div class="settings-group-desc">Configure analytics execution engine and database credentials.</div>
+                        <div class="field">
+                            <label>Engine</label>
+                            <select id="sDbEngine" title="Database engine">
+                                <option value="duckdb">DuckDB (local file)</option>
+                                <option value="postgres">PostgreSQL</option>
+                                <option value="trino">Trino / Starburst</option>
+                                <option value="clickhouse">ClickHouse</option>
+                            </select>
+                        </div>
+                        <div class="field" id="sDuckdbPathField">
+                            <label>DuckDB Path</label>
+                            <input type="text" id="sDuckdbPath" placeholder="data/kur.db">
+                        </div>
+                        <div class="field-row hidden" id="sDbHostPortField">
+                            <div class="field flex-2">
+                                <label>Host</label>
+                                <input type="text" id="sDbHost" placeholder="localhost">
+                            </div>
+                            <div class="field flex-1">
+                                <label>Port</label>
+                                <input type="number" id="sDbPort" placeholder="5432">
+                            </div>
+                        </div>
+                        <div class="field hidden" id="sDbNameField">
+                            <label>Database Name</label>
+                            <input type="text" id="sDbName" placeholder="business_db">
+                        </div>
+                        <div class="field hidden" id="sDbUserField">
+                            <label>Username</label>
+                            <input type="text" id="sDbUser" placeholder="analyst">
+                        </div>
+                        <div class="field hidden" id="sDbPasswordField">
+                            <label>Password</label>
+                            <input type="password" id="sDbPassword" placeholder="••••••">
+                        </div>
+                    </div>
+
+                    <div class="settings-tab-pane" id="tab-polaris">
+                        <div class="settings-group-desc">Configure Apache Polaris (Iceberg REST) metadata connection.</div>
+                        <div class="field">
+                            <label>Polaris URL</label>
+                            <input type="text" id="sPolarisUrl" placeholder="http://polaris:8181">
+                        </div>
+                        <div class="field-row">
+                            <div class="field">
+                                <label>Catalog Name</label>
+                                <input type="text" id="sPolarisCatalog" placeholder="kur_polaris_catalog">
+                            </div>
+                            <div class="field">
+                                <label>Credentials (client_id:secret)</label>
+                                <input type="password" id="sPolarisCredentials" placeholder="polaris:polaris_secret">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-tab-pane" id="tab-agent">
+                        <div class="settings-group-desc">Configure retries, timeout and response language constraints.</div>
+                        <div class="field">
+                            <label>Max Retries on Error</label>
+                            <input type="number" id="sMaxRetries" value="3" min="0" max="10" title="Max retries" placeholder="3">
+                        </div>
+                        <div class="field">
+                            <label>Query Timeout (seconds)</label>
+                            <input type="number" id="sQueryTimeout" value="30" min="5" max="300" title="Query timeout" placeholder="30">
+                        </div>
+                        <div class="field">
+                            <label>Max Result Rows (LIMIT)</label>
+                            <input type="number" id="sMaxRows" value="1000" min="10" max="100000" title="Max rows" placeholder="1000">
+                        </div>
+                        <div class="field">
+                            <label>Response Language</label>
+                            <select id="sLanguage" title="Response language">
+                                <option value="auto">Auto-detect</option>
+                                <option value="vi">Tiếng Việt</option>
+                                <option value="en">English</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-footer">
+                <span class="settings-status" id="settingsStatus"></span>
+                <div class="settings-actions">
+                    <button class="btn-secondary" id="resetSettingsBtn">Reset</button>
+                    <button class="btn-primary" id="saveSettingsBtn">Lưu</button>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <div id="history" class="hidden"></div>
+    <div id="suggestions" class="hidden"></div>
+
+    <script>lucide.createIcons();</script>
+    <script src="app.js?v=4.2"></script>
+    <script src="js/api.js?v=4.2"></script>
+    <script src="js/settings.js?v=4.2"></script>
+    <script src="js/chat.js?v=4.2"></script>
 </body>
 
 </html>
